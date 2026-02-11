@@ -34,14 +34,14 @@ from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
-from .core import (
+from engram.core import (
     MemoryNode,
     Edge,
     EdgeType,
     NodeType,
     SQLiteBackend,
 )
-from .query import MemoryTraverser
+from engram.query import MemoryTraverser
 
 
 class AgentMemory:

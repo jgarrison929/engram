@@ -3,14 +3,14 @@
 import pytest
 from datetime import datetime, timedelta
 
-from src.core import (
+from engram.core import (
     MemoryNode,
     Edge,
     EdgeType,
     NodeType,
     SQLiteBackend,
 )
-from src.query import MemoryTraverser
+from engram.query import MemoryTraverser
 
 
 @pytest.fixture

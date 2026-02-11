@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from src.agent import AgentMemory
-from src.core import NodeType
+from engram.agent import AgentMemory
+from engram.core import NodeType
 
 
 @pytest.fixture

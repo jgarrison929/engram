@@ -6,8 +6,8 @@ from click.testing import CliRunner
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from src.cli import cli, get_storage, parse_datetime
-from src.core import MemoryNode, Edge, EdgeType, NodeType, SQLiteBackend
+from engram.cli import cli, get_storage, parse_datetime
+from engram.core import MemoryNode, Edge, EdgeType, NodeType, SQLiteBackend
 
 
 @pytest.fixture

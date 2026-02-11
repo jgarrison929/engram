@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
-from src.core import (
+from engram.core import (
     MemoryNode,
     Edge,
     EdgeType,

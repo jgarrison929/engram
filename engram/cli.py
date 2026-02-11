@@ -28,14 +28,14 @@ except ImportError:
     print("CLI dependencies not installed. Run: pip install click rich")
     sys.exit(1)
 
-from .core import (
+from engram.core import (
     MemoryNode,
     Edge,
     EdgeType,
     NodeType,
     SQLiteBackend,
 )
-from .query import MemoryTraverser
+from engram.query import MemoryTraverser
 
 
 # Global console for rich output
