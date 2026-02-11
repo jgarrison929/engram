@@ -416,12 +416,17 @@ class SQLiteBackend(StorageBackend):
         query: str,
         limit: int = 100
     ) -> list[MemoryNode]:
+        # Quote the query to handle special characters like hyphens in FTS5
+        # Without quoting, "self-hosted" is parsed as "self" MINUS "hosted"
+        # which causes "no such column: hosted" error
+        escaped_query = '"' + query.replace('"', '""') + '"'
+        
         rows = self.conn.execute("""
             SELECT nodes.id FROM nodes
             JOIN nodes_fts ON nodes.rowid = nodes_fts.rowid
             WHERE nodes_fts MATCH ?
             LIMIT ?
-        """, (query, limit)).fetchall()
+        """, (escaped_query, limit)).fetchall()
         
         return [self.get_node(UUID(row['id'])) for row in rows]
     

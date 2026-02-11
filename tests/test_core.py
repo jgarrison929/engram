@@ -155,3 +155,19 @@ class TestSQLiteBackend:
         whats = [r.what for r in results]
         assert "Created the pitbull logo" in whats
         assert "Updated the logo colors" in whats
+    
+    def test_query_by_text_hyphenated_words(self, storage):
+        """Test FTS with hyphenated words like 'self-hosted'."""
+        storage.add_node(MemoryNode(what="Explored self-hosted AI options"))
+        storage.add_node(MemoryNode(what="Deployed open-source models"))
+        storage.add_node(MemoryNode(what="Regular text without hyphens"))
+        
+        # Should find the hyphenated word without "no such column" error
+        results = storage.query_by_text("self-hosted")
+        assert len(results) == 1
+        assert results[0].what == "Explored self-hosted AI options"
+        
+        # Also test searching for just one part
+        results = storage.query_by_text("open-source")
+        assert len(results) == 1
+        assert results[0].what == "Deployed open-source models"
