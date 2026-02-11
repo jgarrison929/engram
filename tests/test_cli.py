@@ -475,3 +475,74 @@ class TestCLIIntegration:
         ])
         assert r7.exit_code == 0
         assert "3" in r7.output  # 3 steps
+
+
+class TestImportMd:
+    """Tests for the import-md command."""
+    
+    def test_import_md_basic(self, runner, temp_db):
+        """Test basic markdown import."""
+        # Create a test markdown file
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write("""# Test File
+
+## First Section
+
+This is the first section content.
+
+## Lessons Learned
+
+We learned something important here.
+
+## Decision Made
+
+We decided to do X instead of Y.
+""")
+            md_path = f.name
+        
+        try:
+            result = runner.invoke(cli, ["--db", temp_db, "import-md", md_path])
+            assert result.exit_code == 0
+            assert "Imported:" in result.output
+            assert "3 nodes" in result.output
+        finally:
+            import os
+            os.unlink(md_path)
+    
+    def test_import_md_dry_run(self, runner, temp_db):
+        """Test dry-run mode shows preview without saving."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write("""## Test Section
+
+Content here.
+""")
+            md_path = f.name
+        
+        try:
+            result = runner.invoke(cli, ["--db", temp_db, "import-md", md_path, "--dry-run"])
+            assert result.exit_code == 0
+            assert "Dry run:" in result.output
+            assert "Would create" in result.output
+        finally:
+            import os
+            os.unlink(md_path)
+    
+    def test_import_md_with_tags(self, runner, temp_db):
+        """Test adding tags to imported nodes."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write("""## Quick Note
+
+Just a note.
+""")
+            md_path = f.name
+        
+        try:
+            result = runner.invoke(cli, ["--db", temp_db, "import-md", md_path, "--tag", "imported", "--tag", "test"])
+            assert result.exit_code == 0
+            assert "Imported:" in result.output
+        finally:
+            import os
+            os.unlink(md_path)

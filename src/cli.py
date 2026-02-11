@@ -512,6 +512,94 @@ def link(ctx, source_id, target_id, edge_type):
     ctx.invoke(relate, source_id=source_id, target_id=target_id, edge_type=edge_type)
 
 
+@cli.command()
+@click.argument("filepath", type=click.Path(exists=True))
+@click.option("--dry-run", is_flag=True, help="Show what would be imported without saving")
+@click.option("--tag", "-t", multiple=True, help="Add tags to all imported nodes")
+@click.pass_context
+def import_md(ctx, filepath, dry_run, tag):
+    """Import a markdown file as memory nodes.
+    
+    Parses markdown sections (## headers) as separate memories.
+    Each section becomes a node with:
+      - what: The section content
+      - tags: From the header + any --tag options
+      - type: Inferred from content (FACT, LESSON, DECISION, etc.)
+    
+    Examples:
+        engram import-md MEMORY.md
+        engram import-md memory/2026-02-10.md --tag daily-log
+        engram import-md notes.md --dry-run
+    """
+    import re
+    
+    storage = get_storage(ctx.obj.get("db"))
+    
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Split by ## headers
+    sections = re.split(r'^## ', content, flags=re.MULTILINE)
+    
+    nodes_created = []
+    
+    for section in sections[1:]:  # Skip content before first ##
+        if not section.strip():
+            continue
+            
+        lines = section.strip().split('\n')
+        header = lines[0].strip()
+        body = '\n'.join(lines[1:]).strip()
+        
+        if not body:
+            continue
+        
+        # Infer node type from header/content
+        header_lower = header.lower()
+        if any(w in header_lower for w in ['lesson', 'learned', 'insight']):
+            node_type = NodeType.INSIGHT
+        elif any(w in header_lower for w in ['decision', 'chose', 'decided']):
+            node_type = NodeType.DECISION
+        elif any(w in header_lower for w in ['todo', 'task', 'action']):
+            node_type = NodeType.TASK
+        elif any(w in header_lower for w in ['project', 'module', 'feature']):
+            node_type = NodeType.PROJECT
+        elif any(w in header_lower for w in ['person', 'who', 'contact']):
+            node_type = NodeType.PERSON
+        else:
+            node_type = NodeType.EVENT
+        
+        # Create tags from header words + provided tags
+        header_tags = [w.lower() for w in re.findall(r'\w+', header) if len(w) > 2]
+        all_tags = list(set(header_tags + list(tag)))
+        
+        node = MemoryNode(
+            type=node_type,
+            what=f"{header}\n\n{body}",
+            tags=all_tags,
+        )
+        
+        if dry_run:
+            console.print(Panel(
+                f"[bold]{header}[/bold]\n\n"
+                f"Type: {node_type.value}\n"
+                f"Tags: {', '.join(all_tags)}\n"
+                f"Content: {body[:200]}{'...' if len(body) > 200 else ''}",
+                title=f"[dim]{str(node.id)[:8]}[/dim]"
+            ))
+        else:
+            storage.add_node(node)
+            nodes_created.append(node)
+            console.print(f"✓ {str(node.id)[:8]}: {header[:50]}")
+    
+    if dry_run:
+        console.print(f"\n[yellow]Dry run:[/yellow] Would create {len(sections) - 1} nodes")
+    else:
+        console.print(f"\n[green]Imported:[/green] {len(nodes_created)} nodes from {filepath}")
+    
+    storage.close()
+
+
 def main():
     cli(obj={})
 
