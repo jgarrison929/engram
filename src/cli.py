@@ -600,6 +600,176 @@ def import_md(ctx, filepath, dry_run, tag):
     storage.close()
 
 
+@cli.command()
+@click.pass_context
+def stats(ctx):
+    """Show memory graph statistics.
+    
+    Displays:
+      - Total nodes by type
+      - Total edges by type
+      - Date range of memories
+      - Most connected nodes
+    
+    Example:
+        engram stats
+    """
+    from collections import Counter
+    
+    storage = get_storage(ctx.obj.get("db"))
+    
+    # Get all nodes and edges
+    all_nodes = storage.query_by_time(limit=10000)
+    
+    if not all_nodes:
+        console.print("[yellow]No memories stored yet.[/yellow]")
+        storage.close()
+        return
+    
+    # Count by type
+    type_counts = Counter(n.type.value for n in all_nodes)
+    
+    # Get all edges
+    edge_counts = Counter()
+    node_edge_counts = Counter()
+    
+    for node in all_nodes:
+        edges = storage.get_edges(node.id)
+        for edge in edges:
+            edge_counts[edge.type.value] += 1
+            node_edge_counts[node.id] += 1
+    
+    # Date range
+    dates = [n.when for n in all_nodes if n.when]
+    min_date = min(dates) if dates else None
+    max_date = max(dates) if dates else None
+    
+    # Build output
+    console.print(Panel("[bold]Engram Memory Statistics[/bold]", style="blue"))
+    
+    # Node counts
+    console.print("\n[bold]Nodes by Type:[/bold]")
+    node_table = Table(show_header=False, box=None)
+    node_table.add_column("Type", style="cyan")
+    node_table.add_column("Count", justify="right")
+    for ntype, count in sorted(type_counts.items(), key=lambda x: -x[1]):
+        node_table.add_row(ntype, str(count))
+    node_table.add_row("[bold]Total[/bold]", f"[bold]{len(all_nodes)}[/bold]")
+    console.print(node_table)
+    
+    # Edge counts
+    if edge_counts:
+        console.print("\n[bold]Edges by Type:[/bold]")
+        edge_table = Table(show_header=False, box=None)
+        edge_table.add_column("Type", style="green")
+        edge_table.add_column("Count", justify="right")
+        for etype, count in sorted(edge_counts.items(), key=lambda x: -x[1]):
+            edge_table.add_row(etype, str(count))
+        edge_table.add_row("[bold]Total[/bold]", f"[bold]{sum(edge_counts.values())}[/bold]")
+        console.print(edge_table)
+    else:
+        console.print("\n[dim]No edges yet.[/dim]")
+    
+    # Date range
+    if min_date and max_date:
+        console.print(f"\n[bold]Date Range:[/bold] {min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}")
+    
+    # Most connected
+    if node_edge_counts:
+        console.print("\n[bold]Most Connected Nodes:[/bold]")
+        for node_id, count in node_edge_counts.most_common(5):
+            node = storage.get_node(node_id)
+            if node:
+                what_preview = node.what[:50] + "..." if len(node.what) > 50 else node.what
+                console.print(f"  {str(node_id)[:8]}: {count} edges - {what_preview}")
+    
+    storage.close()
+
+
+@cli.command()
+@click.option("--format", "-f", "output_format", type=click.Choice(["json", "md"]), default="md", help="Output format")
+@click.option("--since", help="Export nodes since this time")
+@click.option("--limit", "-n", default=100, help="Max nodes to export")
+@click.pass_context
+def export(ctx, output_format, since, limit):
+    """Export memories to JSON or Markdown.
+    
+    Examples:
+        engram export > backup.md
+        engram export --format json > memories.json
+        engram export --since yesterday --format md
+    """
+    storage = get_storage(ctx.obj.get("db"))
+    
+    since_dt = parse_datetime(since) if since else None
+    nodes = storage.query_by_time(since=since_dt, limit=limit)
+    
+    if not nodes:
+        console.print("[yellow]No memories to export.[/yellow]")
+        storage.close()
+        return
+    
+    if output_format == "json":
+        import json
+        output = []
+        for node in nodes:
+            node_dict = {
+                "id": str(node.id),
+                "type": node.type.value,
+                "what": node.what,
+                "when": node.when.isoformat() if node.when else None,
+                "where": node.where,
+                "who": node.who,
+                "why": node.why,
+                "how": node.how,
+                "tags": node.tags,
+                "artifacts": node.artifacts,
+            }
+            # Get edges
+            edges = storage.get_edges(node.id)
+            if edges:
+                node_dict["edges"] = [
+                    {"target": str(e.target_id), "type": e.type.value}
+                    for e in edges
+                ]
+            output.append(node_dict)
+        print(json.dumps(output, indent=2))
+    else:
+        # Markdown format
+        print("# Engram Memory Export\n")
+        print(f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+        print(f"Total: {len(nodes)} memories\n")
+        print("---\n")
+        
+        for node in nodes:
+            print(f"## {node.what[:80]}\n")
+            print(f"- **ID:** `{str(node.id)[:8]}`")
+            print(f"- **Type:** {node.type.value}")
+            if node.when:
+                print(f"- **When:** {node.when.strftime('%Y-%m-%d %H:%M')}")
+            if node.tags:
+                print(f"- **Tags:** {', '.join(node.tags)}")
+            if node.who:
+                print(f"- **Who:** {', '.join(node.who)}")
+            if node.where:
+                print(f"- **Where:** {node.where}")
+            if node.why:
+                print(f"- **Why:** {node.why}")
+            if node.how:
+                print(f"- **How:** {node.how}")
+            
+            # Edges
+            edges = storage.get_edges(node.id)
+            if edges:
+                print(f"- **Edges:**")
+                for e in edges:
+                    print(f"  - {e.type.value} → `{str(e.target_id)[:8]}`")
+            
+            print()
+    
+    storage.close()
+
+
 def main():
     cli(obj={})
 

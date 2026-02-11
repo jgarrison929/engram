@@ -546,3 +546,53 @@ Just a note.
         finally:
             import os
             os.unlink(md_path)
+
+
+class TestStats:
+    """Tests for the stats command."""
+    
+    def test_stats_empty(self, runner, temp_db):
+        """Test stats on empty database."""
+        result = runner.invoke(cli, ["--db", temp_db, "stats"])
+        assert result.exit_code == 0
+        assert "No memories" in result.output
+    
+    def test_stats_with_data(self, runner, temp_db):
+        """Test stats with some data."""
+        # Add some nodes
+        runner.invoke(cli, ["--db", temp_db, "add", "First memory", "--type", "event"])
+        runner.invoke(cli, ["--db", temp_db, "add", "Second memory", "--type", "decision"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "stats"])
+        assert result.exit_code == 0
+        assert "Nodes by Type" in result.output
+        assert "event" in result.output
+        assert "decision" in result.output
+
+
+class TestExport:
+    """Tests for the export command."""
+    
+    def test_export_empty(self, runner, temp_db):
+        """Test export on empty database."""
+        result = runner.invoke(cli, ["--db", temp_db, "export"])
+        assert result.exit_code == 0
+        assert "No memories" in result.output
+    
+    def test_export_md(self, runner, temp_db):
+        """Test markdown export."""
+        runner.invoke(cli, ["--db", temp_db, "add", "Test memory", "--tags", "test,export"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "export", "--format", "md"])
+        assert result.exit_code == 0
+        assert "Test memory" in result.output
+        assert "test" in result.output
+    
+    def test_export_json(self, runner, temp_db):
+        """Test JSON export."""
+        runner.invoke(cli, ["--db", temp_db, "add", "JSON test", "--type", "artifact"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "export", "--format", "json"])
+        assert result.exit_code == 0
+        assert '"type": "artifact"' in result.output
+        assert '"what": "JSON test"' in result.output
