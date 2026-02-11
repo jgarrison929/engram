@@ -94,7 +94,17 @@ def parse_datetime(value: str) -> datetime:
     raise ValueError(f"Cannot parse datetime: {value}")
 
 
+def print_version(ctx, param, value):
+    """Print version and exit."""
+    if not value or ctx.resilient_parsing:
+        return
+    from engram import __version__
+    click.echo(f"engram {__version__}")
+    ctx.exit()
+
+
 @click.group()
+@click.option("--version", "-V", is_flag=True, callback=print_version, expose_value=False, is_eager=True, help="Show version and exit")
 @click.option("--db", envvar="ENGRAM_DB", help="Database path (default: ~/.engram/memory.db)")
 @click.pass_context
 def cli(ctx, db):
