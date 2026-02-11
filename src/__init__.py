@@ -14,6 +14,7 @@ from .core import (
     SQLiteBackend,
 )
 from .query import MemoryTraverser
+from .agent import AgentMemory
 
 __version__ = "0.1.0"
 
@@ -26,5 +27,6 @@ __all__ = [
     "StorageBackend",
     "SQLiteBackend",
     "MemoryTraverser",
+    "AgentMemory",
     "__version__",
 ]
