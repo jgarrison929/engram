@@ -12,11 +12,14 @@ Usage:
 """
 
 import json
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from uuid import UUID
+
+from dateutil import parser as dateutil_parser
 
 try:
     import click
@@ -54,44 +57,88 @@ def get_storage(db_path: Optional[str] = None) -> SQLiteBackend:
     return storage
 
 
+def _parse_time_string(time_str: str) -> tuple[int, int]:
+    """Parse a time string like '6am', '3pm', '14:30' into (hour, minute)."""
+    time_str = time_str.lower().strip()
+    
+    # Handle am/pm format: 6am, 3pm, 11am, 12pm
+    am_pm_match = re.match(r'^(\d{1,2})(am|pm)$', time_str)
+    if am_pm_match:
+        hour = int(am_pm_match.group(1))
+        is_pm = am_pm_match.group(2) == 'pm'
+        if is_pm and hour != 12:
+            hour += 12
+        elif not is_pm and hour == 12:
+            hour = 0
+        return (hour, 0)
+    
+    # Handle 24h format: 14:30, 6:00
+    time_match = re.match(r'^(\d{1,2}):(\d{2})$', time_str)
+    if time_match:
+        return (int(time_match.group(1)), int(time_match.group(2)))
+    
+    raise ValueError(f"Cannot parse time: {time_str}")
+
+
 def parse_datetime(value: str) -> datetime:
-    """Parse flexible datetime input."""
-    value = value.lower().strip()
+    """Parse flexible datetime input.
+    
+    Supports:
+    - "now", "today", "yesterday"
+    - "today 6am", "yesterday 3pm"
+    - "5 minutes ago", "2 hours ago", "3 days ago"
+    - ISO 8601: "2026-02-11T06:00:00" or "2026-02-11t06:00:00"
+    - Natural language: "Feb 10, 2026", "February 10 2026"
+    - Common formats: "2026-02-10 14:30", "02/10/2026"
+    """
+    original_value = value
+    value = value.strip()
     now = datetime.now()
     
-    # Relative times
-    if value == "now":
+    # Handle lowercase for comparison, but preserve original for dateutil
+    value_lower = value.lower()
+    
+    # Relative times - exact matches
+    if value_lower == "now":
         return now
-    if value == "today":
+    if value_lower == "today":
         return now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if value == "yesterday":
+    if value_lower == "yesterday":
         return (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    if value.endswith(" ago"):
-        # Parse "5 minutes ago", "2 hours ago", "3 days ago"
-        parts = value[:-4].strip().split()
+    
+    # "today 6am", "yesterday 3pm" format
+    today_time_match = re.match(r'^today\s+(.+)$', value_lower)
+    if today_time_match:
+        hour, minute = _parse_time_string(today_time_match.group(1))
+        return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    
+    yesterday_time_match = re.match(r'^yesterday\s+(.+)$', value_lower)
+    if yesterday_time_match:
+        hour, minute = _parse_time_string(yesterday_time_match.group(1))
+        return (now - timedelta(days=1)).replace(hour=hour, minute=minute, second=0, microsecond=0)
+    
+    # "X ago" format
+    if value_lower.endswith(" ago"):
+        parts = value_lower[:-4].strip().split()
         if len(parts) == 2:
-            amount, unit = int(parts[0]), parts[1]
-            if unit.startswith("min"):
-                return now - timedelta(minutes=amount)
-            if unit.startswith("hour"):
-                return now - timedelta(hours=amount)
-            if unit.startswith("day"):
-                return now - timedelta(days=amount)
+            try:
+                amount, unit = int(parts[0]), parts[1]
+                if unit.startswith("min"):
+                    return now - timedelta(minutes=amount)
+                if unit.startswith("hour"):
+                    return now - timedelta(hours=amount)
+                if unit.startswith("day"):
+                    return now - timedelta(days=amount)
+            except ValueError:
+                pass
     
-    # ISO format or common formats
-    for fmt in [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d",
-        "%m/%d/%Y %H:%M",
-        "%m/%d/%Y",
-    ]:
-        try:
-            return datetime.strptime(value, fmt)
-        except ValueError:
-            continue
+    # Use dateutil for flexible parsing (handles ISO 8601 with T/t, natural language, etc.)
+    try:
+        return dateutil_parser.parse(value)
+    except (ValueError, dateutil_parser.ParserError):
+        pass
     
-    raise ValueError(f"Cannot parse datetime: {value}")
+    raise ValueError(f"Cannot parse datetime: {original_value}")
 
 
 def print_version(ctx, param, value):

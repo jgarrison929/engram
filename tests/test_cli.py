@@ -121,6 +121,48 @@ class TestParseDatetime:
         assert result.year == 2026
         assert result.month == 2
         assert result.day == 10
+    
+    def test_parse_iso_with_t_separator(self):
+        """ISO 8601 with uppercase T."""
+        result = parse_datetime("2026-02-11T06:00:00")
+        assert result.year == 2026
+        assert result.month == 2
+        assert result.day == 11
+        assert result.hour == 6
+        assert result.minute == 0
+    
+    def test_parse_iso_with_lowercase_t(self):
+        """ISO 8601 with lowercase t should also work."""
+        result = parse_datetime("2026-02-11t06:00:00")
+        assert result.year == 2026
+        assert result.month == 2
+        assert result.day == 11
+        assert result.hour == 6
+        assert result.minute == 0
+    
+    def test_parse_today_with_time(self):
+        """Parse 'today 6am' format."""
+        result = parse_datetime("today 6am")
+        today = datetime.now().date()
+        assert result.date() == today
+        assert result.hour == 6
+        assert result.minute == 0
+    
+    def test_parse_yesterday_with_time(self):
+        """Parse 'yesterday 3pm' format."""
+        result = parse_datetime("yesterday 3pm")
+        yesterday = (datetime.now() - timedelta(days=1)).date()
+        assert result.date() == yesterday
+        assert result.hour == 15
+        assert result.minute == 0
+    
+    def test_parse_natural_language(self):
+        """Parse various natural language formats."""
+        # These should not raise ValueError
+        result = parse_datetime("Feb 10, 2026")
+        assert result.year == 2026
+        assert result.month == 2
+        assert result.day == 10
 
 
 class TestAddCommand:
