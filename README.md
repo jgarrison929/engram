@@ -19,26 +19,142 @@ Current AI memory is flat text files and semantic search. That works for "what's
 - **Temporal queries** - Time-based retrieval built in
 - **Artifact linking** - Connect memories to files, images, URLs
 
-## Quick Start
+## Installation
 
 ```bash
-# Install
-pip install engram
+# Install with CLI support
+pip install engram[cli]
 
-# Store a memory
-engram add "Created the Pitbull logo - line art pitbull with yellow hard hat" \
-  --when "2026-02-10T02:30:00" \
-  --tags logo,pitbull,design \
-  --artifact /path/to/logo.png
+# Or install everything
+pip install engram[all]
+```
 
-# Query by time
-engram query --since "yesterday" --until "now"
+## CLI Usage
 
-# Query by topic with traversal
+### Adding Memories
+
+```bash
+# Basic memory
+engram add "Deployed the new website"
+
+# With full 5W+H metadata
+engram add "Decided to use cloud-only architecture" \
+  --when "2026-02-10 14:30" \
+  --who Josh \
+  --who River \
+  --where "Architecture meeting" \
+  --why "Avoid on-prem deployment complexity" \
+  --how "Team discussion and vote" \
+  --tags architecture,decision,cloud \
+  --type decision
+
+# With artifact links
+engram add "Created the Pitbull logo" \
+  --tags logo,design \
+  --artifact /path/to/logo.png \
+  --artifact https://example.com/design-doc
+```
+
+### Querying Memories
+
+```bash
+# Full-text search
+engram query "logo"
+
+# Search with traversal (follow connected memories)
 engram query "logo" --hops 2
 
-# Ask natural language (requires LLM)
-engram ask "What did we decide about the logo design?"
+# Time-based queries
+engram query --since yesterday
+engram query --since "2 hours ago" --until now
+engram query --since "2026-02-01" --until "2026-02-10"
+
+# Filter by tags
+engram query --tags design,logo
+
+# JSON output for scripting
+engram query "logo" --json
+```
+
+### Viewing Memory Details
+
+```bash
+# Show a specific memory (full UUID or prefix)
+engram show abc12345
+
+# Shows all 5W+H fields plus connections to other memories
+```
+
+### Creating Relationships
+
+```bash
+# Connect two memories with a relationship
+engram relate <source-id> <target-id> --type led_to
+
+# Relationship types:
+#   caused_by    - X was caused by Y
+#   led_to       - X led to Y
+#   supersedes   - X replaces Y (newer version)
+#   preceded_by  - X came after Y
+#   relates_to   - General association (default)
+#   contradicts  - X conflicts with Y
+#   supports     - X reinforces Y
+#   mentions     - X references Y
+#   part_of      - X is a component of Y
+#   derived_from - X was created from Y
+```
+
+### Finding Paths (Six Degrees)
+
+```bash
+# Find how two memories are connected
+engram path <from-id> <to-id>
+
+# Limit path length
+engram path <from-id> <to-id> --max-hops 4
+```
+
+### Context Exploration
+
+```bash
+# See the graph around a memory
+engram context <id> --hops 2
+```
+
+## Python API
+
+```python
+from engram import SQLiteBackend, MemoryNode, Edge, EdgeType, MemoryTraverser
+
+# Initialize storage
+storage = SQLiteBackend("memory.db")
+storage.initialize()
+
+# Create a memory
+node = MemoryNode(
+    what="Decided on cloud architecture",
+    who=["Josh", "River"],
+    why="Simpler deployment",
+    tags=["architecture", "decision"],
+)
+storage.add_node(node)
+
+# Query memories
+results = storage.query_by_text("architecture")
+recent = storage.query_by_time(since=datetime.now() - timedelta(days=7))
+
+# Create relationships
+edge = Edge(
+    source_id=node1.id,
+    target_id=node2.id,
+    type=EdgeType.LED_TO,
+)
+storage.add_edge(edge)
+
+# Traverse the graph
+traverser = MemoryTraverser(storage)
+context = traverser.traverse_bfs(node.id, max_hops=2)
+path = traverser.find_path(from_id, to_id)
 ```
 
 ## Architecture
@@ -68,13 +184,48 @@ engram ask "What did we decide about the logo design?"
 └────────────────────────────────────────────────────┘
 ```
 
+## Memory Types
+
+- `event` - Something that happened (default)
+- `decision` - A choice that was made
+- `artifact` - A thing that was created
+- `conversation` - A discussion
+- `insight` - A realization or lesson learned
+- `person` - A person reference
+- `project` - A project reference
+- `task` - A to-do or action item
+
 ## Status
 
-🚧 **Early Development** - Not ready for production use.
+🚧 **Early Development** - Core functionality works, API may change.
+
+- ✅ SQLite storage with FTS5 full-text search
+- ✅ 5W+H indexed memory nodes
+- ✅ Typed edges and relationships
+- ✅ BFS graph traversal
+- ✅ CLI with add/query/show/relate/path/context
+- ⏳ Semantic search with embeddings
+- ⏳ PostgreSQL backend
+- ⏳ Neo4j backend
+- ⏳ OpenClaw integration
+- ⏳ MCP server
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
+```bash
+# Clone and install
+git clone https://github.com/jgarrison929/engram.git
+cd engram
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Run with coverage
+pytest --cov=src
+```
 
 ## License
 

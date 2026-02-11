@@ -328,7 +328,7 @@ def show(ctx, node_id):
             other_id = edge.target_id if edge.source_id == node.id else edge.source_id
             other = storage.get_node(other_id)
             if other:
-                console.print(f"  {direction} [{edge.type.value}] {other.what[:40]}... ({str(other_id)[:8]})")
+                console.print(f"  {direction} \\[{edge.type.value}] {other.what[:40]}... ({str(other_id)[:8]})")
     
     storage.close()
 
@@ -444,11 +444,24 @@ def context(ctx, from_id, hops):
               default="relates_to",
               help="Relationship type")
 @click.pass_context
-def link(ctx, source_id, target_id, edge_type):
-    """Create a link between two memories.
+def relate(ctx, source_id, target_id, edge_type):
+    """Create a relationship between two memories.
     
-    Example:
-        engram link abc123 def456 --type caused_by
+    Relationship types:
+      - caused_by: X was caused by Y
+      - led_to: X led to Y
+      - supersedes: X replaces Y (newer version)
+      - preceded_by: X came after Y
+      - relates_to: General association (default)
+      - contradicts: X conflicts with Y
+      - supports: X reinforces Y
+      - mentions: X references Y
+      - part_of: X is a component of Y
+      - derived_from: X was created from Y
+    
+    Examples:
+        engram relate abc123 def456 --type caused_by
+        engram relate <decision-id> <event-id> --type led_to
     """
     storage = get_storage(ctx.obj.get("db"))
     
@@ -481,9 +494,22 @@ def link(ctx, source_id, target_id, edge_type):
     )
     
     storage.add_edge(edge)
-    console.print(f"✓ Linked: {str(source_uuid)[:8]} --[{edge_type}]--> {str(target_uuid)[:8]}")
+    console.print(f"✓ Related: {str(source_uuid)[:8]} --[{edge_type}]--> {str(target_uuid)[:8]}")
     
     storage.close()
+
+
+# Alias 'link' to 'relate' for backwards compatibility
+@cli.command("link", hidden=True)
+@click.argument("source_id")
+@click.argument("target_id")
+@click.option("--type", "-t", "edge_type", 
+              type=click.Choice([e.value for e in EdgeType]), 
+              default="relates_to")
+@click.pass_context
+def link(ctx, source_id, target_id, edge_type):
+    """Alias for 'relate' (deprecated)."""
+    ctx.invoke(relate, source_id=source_id, target_id=target_id, edge_type=edge_type)
 
 
 def main():
