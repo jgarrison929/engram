@@ -121,6 +121,34 @@ engram path <from-id> <to-id> --max-hops 4
 engram context <id> --hops 2
 ```
 
+### Importing History
+
+```bash
+# Import git commits from a repository
+engram import-git /path/to/repo
+engram import-git . --limit 100  # Current dir, last 100 commits
+
+# Import markdown files from a directory
+engram import-md-dir /path/to/notes
+engram import-md-dir ./memory --dry-run  # Preview without importing
+
+# Features:
+# - Deduplication (re-running skips existing nodes)
+# - Auto-tagging by commit type (feat, fix, docs)
+# - Links related commits touching same files
+# - Extracts dates from YYYY-MM-DD.md filenames
+# - Parses ## headers as memory boundaries
+```
+
+### Statistics
+
+```bash
+# View memory graph statistics
+engram stats
+
+# Shows: node counts by type, edge counts, date range, most connected nodes
+```
+
 ## Python API
 
 ### Agent Memory (High-Level)
@@ -254,7 +282,10 @@ path = traverser.find_path(from_id, to_id)
 - ✅ 5W+H indexed memory nodes
 - ✅ Typed edges and relationships
 - ✅ BFS graph traversal
-- ✅ CLI with add/query/show/relate/path/context
+- ✅ CLI with add/query/show/relate/path/context/stats
+- ✅ Git commit import (import-git)
+- ✅ Markdown directory import (import-md-dir)
+- ✅ Deduplication via content hashing
 - ⏳ Semantic search with embeddings
 - ⏳ PostgreSQL backend
 - ⏳ Neo4j backend
