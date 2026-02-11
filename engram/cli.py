@@ -827,6 +827,131 @@ def export(ctx, output_format, since, limit):
     storage.close()
 
 
+@cli.command("import-git")
+@click.argument("repo_path", type=click.Path(exists=True))
+@click.option("--max", "-n", "max_commits", default=0, help="Max commits to import (0=unlimited)")
+@click.option("--since", "-s", help="Only commits since this date")
+@click.option("--until", "-u", help="Only commits until this date")
+@click.option("--skip-merge/--include-merge", default=True, help="Skip merge commits")
+@click.option("--link/--no-link", default=True, help="Create edges between related commits")
+@click.option("--dry-run", is_flag=True, help="Preview without saving")
+@click.pass_context
+def import_git(ctx, repo_path, max_commits, since, until, skip_merge, link, dry_run):
+    """Import git commits as memory nodes.
+    
+    Creates nodes for significant commits (features, fixes, etc.) and
+    links commits that modified the same files.
+    
+    Examples:
+        engram import-git /path/to/repo
+        engram import-git ./my-project --max 50
+        engram import-git ./repo --since "2026-01-01" --dry-run
+    """
+    from pathlib import Path
+    from engram.ingest import import_git_repo, CommitFilter
+    
+    storage = get_storage(ctx.obj.get("db"))
+    
+    # Build filter config
+    filter_config = CommitFilter(
+        skip_merge=skip_merge,
+        max_commits=max_commits,
+    )
+    
+    if since:
+        filter_config.since = parse_datetime(since)
+    if until:
+        filter_config.until = parse_datetime(until)
+    
+    repo_path = Path(repo_path)
+    
+    console.print(f"[bold]Importing from:[/bold] {repo_path.name}")
+    if dry_run:
+        console.print("[yellow]Dry run mode[/yellow]")
+    
+    try:
+        stats = import_git_repo(
+            storage,
+            repo_path,
+            filter_config=filter_config,
+            link_related=link,
+            dry_run=dry_run,
+        )
+        
+        console.print(f"\n[bold]Results:[/bold]")
+        console.print(f"  Total commits scanned: {stats['total_commits']}")
+        console.print(f"  Significant commits: {stats['significant_commits']}")
+        
+        if dry_run:
+            console.print(f"\n[yellow]Would create {stats['significant_commits']} nodes[/yellow]")
+        else:
+            console.print(f"  Nodes created: [green]{stats['nodes_created']}[/green]")
+            console.print(f"  Nodes skipped (duplicates): {stats['nodes_skipped']}")
+            console.print(f"  Edges created: {stats['edges_created']}")
+            
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+    
+    storage.close()
+
+
+@cli.command("import-md-dir")
+@click.argument("dir_path", type=click.Path(exists=True))
+@click.option("--pattern", "-p", default="*.md", help="File pattern (default: *.md)")
+@click.option("--tag", "-t", multiple=True, help="Add tags to all imported nodes")
+@click.option("--link/--no-link", "link_by_date", default=True, help="Link nodes from same date")
+@click.option("--dry-run", is_flag=True, help="Preview without saving")
+@click.pass_context
+def import_md_dir(ctx, dir_path, pattern, tag, link_by_date, dry_run):
+    """Import all markdown files from a directory.
+    
+    Scans for markdown files, parses ## sections as memories, and
+    extracts dates from filenames (YYYY-MM-DD.md format).
+    
+    Examples:
+        engram import-md-dir ./memory/
+        engram import-md-dir ./docs --pattern "*.md" --tag docs
+        engram import-md-dir ./logs --dry-run
+    """
+    from pathlib import Path
+    from engram.ingest import import_markdown_dir
+    
+    storage = get_storage(ctx.obj.get("db"))
+    
+    dir_path = Path(dir_path)
+    
+    console.print(f"[bold]Importing from:[/bold] {dir_path}")
+    console.print(f"[bold]Pattern:[/bold] {pattern}")
+    if dry_run:
+        console.print("[yellow]Dry run mode[/yellow]")
+    
+    try:
+        stats = import_markdown_dir(
+            storage,
+            dir_path,
+            pattern=pattern,
+            extra_tags=list(tag),
+            link_by_date=link_by_date,
+            dry_run=dry_run,
+        )
+        
+        console.print(f"\n[bold]Results:[/bold]")
+        console.print(f"  Files processed: {stats['files_processed']}")
+        console.print(f"  Sections found: {stats['sections_found']}")
+        
+        if dry_run:
+            console.print(f"\n[yellow]Would create {stats['sections_found']} nodes[/yellow]")
+        else:
+            console.print(f"  Nodes created: [green]{stats['nodes_created']}[/green]")
+            console.print(f"  Nodes skipped (duplicates): {stats['nodes_skipped']}")
+            console.print(f"  Edges created: {stats['edges_created']}")
+            
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+    
+    storage.close()
+
+
 def main():
     cli(obj={})
 
