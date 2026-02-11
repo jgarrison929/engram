@@ -123,6 +123,57 @@ engram context <id> --hops 2
 
 ## Python API
 
+### Agent Memory (High-Level)
+
+For AI agents, use the `AgentMemory` helper class:
+
+```python
+from engram import AgentMemory
+
+# Initialize
+memory = AgentMemory()  # Uses ~/.engram/memory.db by default
+
+# At session start - load relevant context
+context = memory.load_context(tags=["project-x"], days=7, max_hops=2)
+
+# Log completed tasks
+memory.log_task(
+    what="Implemented user authentication",
+    tags=["auth", "backend"],
+    artifacts=["src/auth.py", "tests/test_auth.py"],
+)
+
+# Store lessons learned (auto-links to last task)
+memory.log_insight(
+    what="Always hash passwords with bcrypt, not SHA256",
+    tags=["security", "passwords"],
+    why="SHA256 is too fast for password hashing",
+)
+
+# Track decisions with reasoning
+memory.log_decision(
+    what="Use PostgreSQL for production",
+    why="Better JSON support and proven scalability",
+    alternatives=["MySQL", "SQLite"],
+    tags=["database", "architecture"],
+)
+
+# Search and traverse
+results = memory.search("authentication")
+related = memory.find_related(node_id, max_hops=2)
+
+# Clean up
+memory.close()
+
+# Or use as context manager
+with AgentMemory() as memory:
+    memory.log_event("Session started", tags=["session"])
+```
+
+### Low-Level API
+
+For more control, use the storage and traversal APIs directly:
+
 ```python
 from engram import SQLiteBackend, MemoryNode, Edge, EdgeType, MemoryTraverser
 
