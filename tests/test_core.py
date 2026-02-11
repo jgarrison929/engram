@@ -1,7 +1,7 @@
 """Tests for core memory models and storage."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
 from src.core import (
@@ -33,7 +33,7 @@ class TestMemoryNode:
         assert node.type == NodeType.EVENT
     
     def test_create_full(self):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         node = MemoryNode(
             type=NodeType.DECISION,
             what="Chose line art for logo",
@@ -110,7 +110,7 @@ class TestSQLiteBackend:
         assert edges[0].type == EdgeType.LED_TO
     
     def test_query_by_time(self, storage):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         
         # Add nodes at different times
         old = MemoryNode(what="Old", when=now - timedelta(days=7))

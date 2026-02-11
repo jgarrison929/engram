@@ -5,7 +5,7 @@ Abstracts persistence so we can swap SQLite/Postgres/Neo4j.
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -259,7 +259,7 @@ class SQLiteBackend(StorageBackend):
     def update_node(self, node: MemoryNode) -> bool:
         import json
         
-        node.updated_at = datetime.utcnow()
+        node.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         
         cursor = self.conn.execute("""
             UPDATE nodes SET

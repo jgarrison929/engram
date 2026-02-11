@@ -5,7 +5,7 @@ Core data models for Engram memory graph.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
