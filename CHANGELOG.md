@@ -2,6 +2,21 @@
 
 All notable changes to Engram will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `AgentMemory` class - high-level interface for AI agent integration
+  - `load_context()` - Load relevant memories at session start
+  - `log_task()`, `log_insight()`, `log_decision()`, `log_event()` - Memory logging
+  - `find_related()`, `search()` - Graph queries
+  - Auto-linking between related memories
+- `engram stats` - Show memory graph statistics
+- `engram export` - Export memories to JSON or Markdown
+- `engram import-md` - Import markdown files as memories
+
+### Fixed
+- Replace deprecated `datetime.utcnow()` with timezone-aware equivalent
+
 ## [0.1.0] - 2026-02-10
 
 ### 🚀 Initial Release
