@@ -1046,6 +1046,37 @@ def import_md_dir(ctx, dir_path, pattern, tag, link_by_date, dry_run):
     storage.close()
 
 
+@cli.command()
+@click.argument("name", type=click.Choice(["vista-pnp"]))
+def demo(name):
+    """Run a built-in demo/example.
+    
+    Available demos:
+      - vista-pnp: Tree/root model with Vista, PnPv4, PnPv5
+    
+    Example:
+        engram demo vista-pnp
+    """
+    if name == "vista-pnp":
+        # Import and run the Vista/PnP example
+        import importlib.util
+        from pathlib import Path
+        
+        # Find the example file relative to this module
+        module_dir = Path(__file__).parent.parent
+        example_path = module_dir / "examples" / "vista_pnp_example.py"
+        
+        if not example_path.exists():
+            console.print(f"[red]Demo not found:[/red] {example_path}", style="red")
+            return
+        
+        # Load and run the example
+        spec = importlib.util.spec_from_file_location("vista_pnp_example", example_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.main()
+
+
 def main():
     cli(obj={})
 
