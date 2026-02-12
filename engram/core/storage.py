@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from .models import MemoryNode, Edge, EdgeType, QueryResult
+from .models import MemoryNode, Edge, EdgeType, KnowledgeScope, QueryResult
 
 
 class StorageBackend(ABC):
@@ -136,6 +136,8 @@ class SQLiteBackend(StorageBackend):
                 who TEXT,  -- JSON array
                 why TEXT,
                 how TEXT,
+                project TEXT,  -- Tree/project name (e.g., "vista", "pnpv4")
+                scope TEXT DEFAULT 'branch',  -- 'branch' or 'root'
                 tags TEXT,  -- JSON array
                 artifacts TEXT,  -- JSON array
                 embedding BLOB,  -- Serialized float array
@@ -161,6 +163,8 @@ class SQLiteBackend(StorageBackend):
             CREATE INDEX IF NOT EXISTS idx_nodes_when ON nodes(when_ts);
             CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
             CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at);
+            CREATE INDEX IF NOT EXISTS idx_nodes_project ON nodes(project);
+            CREATE INDEX IF NOT EXISTS idx_nodes_scope ON nodes(scope);
             CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
             CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
             CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
@@ -191,6 +195,17 @@ class SQLiteBackend(StorageBackend):
             END;
         """)
         
+        # Migration: Add project and scope columns if they don't exist
+        # This handles existing databases gracefully
+        try:
+            self.conn.execute("ALTER TABLE nodes ADD COLUMN project TEXT")
+        except Exception:
+            pass  # Column already exists
+        try:
+            self.conn.execute("ALTER TABLE nodes ADD COLUMN scope TEXT DEFAULT 'branch'")
+        except Exception:
+            pass  # Column already exists
+        
         self.conn.commit()
     
     def close(self) -> None:
@@ -203,9 +218,9 @@ class SQLiteBackend(StorageBackend):
         
         self.conn.execute("""
             INSERT INTO nodes (id, type, what, when_ts, where_ctx, who, why, how,
-                             tags, artifacts, embedding, confidence, source,
+                             project, scope, tags, artifacts, embedding, confidence, source,
                              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             str(node.id),
             node.type.value,
@@ -215,6 +230,8 @@ class SQLiteBackend(StorageBackend):
             json.dumps(node.who),
             node.why,
             node.how,
+            node.project,
+            node.scope.value,
             json.dumps(node.tags),
             json.dumps(node.artifacts),
             self._serialize_embedding(node.embedding),
@@ -238,6 +255,9 @@ class SQLiteBackend(StorageBackend):
         if not row:
             return None
         
+        # Handle scope - default to BRANCH if not set (migration case)
+        scope_value = row['scope'] if 'scope' in row.keys() and row['scope'] else 'branch'
+        
         return MemoryNode(
             id=UUID(row['id']),
             type=NodeType(row['type']),
@@ -247,6 +267,8 @@ class SQLiteBackend(StorageBackend):
             who=json.loads(row['who']) if row['who'] else [],
             why=row['why'],
             how=row['how'],
+            project=row['project'] if 'project' in row.keys() else None,
+            scope=KnowledgeScope(scope_value),
             tags=json.loads(row['tags']) if row['tags'] else [],
             artifacts=json.loads(row['artifacts']) if row['artifacts'] else [],
             embedding=self._deserialize_embedding(row['embedding']),
@@ -264,7 +286,7 @@ class SQLiteBackend(StorageBackend):
         cursor = self.conn.execute("""
             UPDATE nodes SET
                 type = ?, what = ?, when_ts = ?, where_ctx = ?, who = ?,
-                why = ?, how = ?, tags = ?, artifacts = ?, embedding = ?,
+                why = ?, how = ?, project = ?, scope = ?, tags = ?, artifacts = ?, embedding = ?,
                 confidence = ?, source = ?, updated_at = ?
             WHERE id = ?
         """, (
@@ -275,6 +297,8 @@ class SQLiteBackend(StorageBackend):
             json.dumps(node.who),
             node.why,
             node.how,
+            node.project,
+            node.scope.value,
             json.dumps(node.tags),
             json.dumps(node.artifacts),
             self._serialize_embedding(node.embedding),
@@ -439,6 +463,131 @@ class SQLiteBackend(StorageBackend):
         # TODO: Implement with numpy for cosine similarity
         # For now, return empty - embeddings are a Phase 2 feature
         return []
+    
+    def query_by_project(
+        self,
+        project: str,
+        include_roots: bool = True,
+        limit: int = 100
+    ) -> list[MemoryNode]:
+        """Find nodes belonging to a specific project (tree).
+        
+        Args:
+            project: The project name to filter by
+            include_roots: If True, also include root-scoped nodes (shared knowledge)
+            limit: Maximum results
+        """
+        if include_roots:
+            # Get project nodes plus ALL roots (even from other projects)
+            query = "SELECT id FROM nodes WHERE (project = ? OR scope = 'root') ORDER BY when_ts DESC LIMIT ?"
+            params = [project, limit]
+        else:
+            # Only branch nodes for this project (exclude roots)
+            query = "SELECT id FROM nodes WHERE project = ? AND scope = 'branch' ORDER BY when_ts DESC LIMIT ?"
+            params = [project, limit]
+        
+        rows = self.conn.execute(query, params).fetchall()
+        return [self.get_node(UUID(row['id'])) for row in rows]
+    
+    def query_roots_only(
+        self,
+        limit: int = 100
+    ) -> list[MemoryNode]:
+        """Find all root-scoped nodes (shared knowledge across projects)."""
+        rows = self.conn.execute(
+            "SELECT id FROM nodes WHERE scope = 'root' ORDER BY when_ts DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [self.get_node(UUID(row['id'])) for row in rows]
+    
+    def query_by_text_filtered(
+        self,
+        query: str,
+        project: Optional[str] = None,
+        roots_only: bool = False,
+        limit: int = 100
+    ) -> list[MemoryNode]:
+        """Full-text search with optional project/scope filtering.
+        
+        Args:
+            query: Search text
+            project: Filter to this project (includes roots if not roots_only)
+            roots_only: Only return root-scoped nodes
+            limit: Maximum results
+        """
+        escaped_query = '"' + query.replace('"', '""') + '"'
+        
+        sql = """
+            SELECT nodes.id FROM nodes
+            JOIN nodes_fts ON nodes.rowid = nodes_fts.rowid
+            WHERE nodes_fts MATCH ?
+        """
+        params = [escaped_query]
+        
+        if roots_only:
+            sql += " AND nodes.scope = 'root'"
+        elif project:
+            sql += " AND (nodes.project = ? OR nodes.scope = 'root')"
+            params.append(project)
+        
+        sql += " LIMIT ?"
+        params.append(limit)
+        
+        rows = self.conn.execute(sql, params).fetchall()
+        return [self.get_node(UUID(row['id'])) for row in rows]
+    
+    def get_all_projects(self) -> list[str]:
+        """Get a list of all unique project names (trees)."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT project FROM nodes WHERE project IS NOT NULL ORDER BY project"
+        ).fetchall()
+        return [row['project'] for row in rows]
+    
+    def get_project_stats(self) -> dict:
+        """Get statistics about projects/trees.
+        
+        Returns dict with:
+            - projects: list of {name, node_count, root_count, branch_count}
+            - total_roots: count of all root-scoped nodes
+        """
+        # Get per-project counts
+        rows = self.conn.execute("""
+            SELECT 
+                project,
+                COUNT(*) as node_count,
+                SUM(CASE WHEN scope = 'root' THEN 1 ELSE 0 END) as root_count,
+                SUM(CASE WHEN scope = 'branch' THEN 1 ELSE 0 END) as branch_count
+            FROM nodes
+            WHERE project IS NOT NULL
+            GROUP BY project
+            ORDER BY node_count DESC
+        """).fetchall()
+        
+        projects = [
+            {
+                'name': row['project'],
+                'node_count': row['node_count'],
+                'root_count': row['root_count'],
+                'branch_count': row['branch_count'],
+            }
+            for row in rows
+        ]
+        
+        # Count orphan roots (root nodes with no project)
+        orphan_roots = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM nodes WHERE scope = 'root' AND project IS NULL"
+        ).fetchone()['cnt']
+        
+        # Total roots
+        total_roots = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM nodes WHERE scope = 'root'"
+        ).fetchone()['cnt']
+        
+        return {
+            'projects': projects,
+            'total_roots': total_roots,
+            'orphan_roots': orphan_roots,
+        }
     
     def _serialize_embedding(self, embedding: Optional[list[float]]) -> Optional[bytes]:
         if embedding is None:

@@ -104,6 +104,39 @@ engram relate <source-id> <target-id> --type led_to
 #   derived_from - X was created from Y
 ```
 
+### Tree/Root Model (Cross-Project Knowledge)
+
+Engram supports organizing knowledge across projects using the tree/root model:
+
+- **Trees** = Projects or systems (e.g., Vista, PnPv4, Pitbull)
+- **Branches** = Project-specific knowledge (decisions scoped to that project)
+- **Roots** = Shared knowledge that crosses projects (the "why" behind decisions)
+
+```bash
+# Add a branch (project-specific) memory
+engram add "Vista uses monthly costing only" --project vista --scope branch
+
+# Add a root (shared) insight that exposes a gap
+engram add "Vista costing gap - no weekly granularity" --project vista --scope root
+
+# Add a memory from another project that addresses the root
+engram add "PnPv4 fills the weekly costing gap" --project pnpv4 --scope branch
+```
+
+Querying with project/scope filters:
+
+```bash
+# Query within a project (includes roots by default)
+engram query "costing" --project vista
+
+# Query only root knowledge (shared insights)
+engram query --roots-only
+engram query "gap" --roots-only
+
+# List all projects and their stats
+engram trees
+```
+
 ### Finding Paths (Six Degrees)
 
 ```bash

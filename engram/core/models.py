@@ -2,6 +2,14 @@
 Core data models for Engram memory graph.
 
 5W+H indexed memory nodes with typed edges for traversal.
+
+Tree/Root Model:
+- Trees = Projects/Systems (e.g., Vista, PnPv4, PnPv5, Pitbull)
+- Branches = Decisions within that project (scoped, can't cross trees)
+- Roots/Soil = Shared knowledge layer (cross-project patterns, the "why")
+
+A node with scope="branch" belongs only to its project (tree).
+A node with scope="root" is shared knowledge that can connect multiple projects.
 """
 
 from dataclasses import dataclass, field
@@ -31,6 +39,17 @@ class EdgeType(Enum):
     MENTIONS = "mentions"        # X references Y (person, project, etc.)
     PART_OF = "part_of"          # X is a component of Y
     DERIVED_FROM = "derived_from"  # X was created from Y
+    
+    # Cross-project knowledge
+    EXPOSES_ROOT = "exposes_root"    # A branch decision exposes/reveals a root insight
+    ADDRESSES_ROOT = "addresses_root"  # A project/decision addresses a root cause
+
+
+class KnowledgeScope(Enum):
+    """Scope of a memory node in the tree/root model."""
+    
+    BRANCH = "branch"  # Project-specific knowledge (can't cross trees)
+    ROOT = "root"      # Shared knowledge (cross-project patterns, the "why")
 
 
 class NodeType(Enum):
@@ -63,6 +82,10 @@ class MemoryNode:
         why: Reasoning or motivation (optional)
         how: Method or process (optional)
         
+        # Tree/Root Model
+        project: The project/tree this memory belongs to (e.g., "vista", "pnpv4")
+        scope: Whether this is branch (project-specific) or root (shared) knowledge
+        
         # Metadata
         tags: Searchable labels
         artifacts: Linked files, URLs, images
@@ -85,6 +108,10 @@ class MemoryNode:
     who: list[str] = field(default_factory=list)
     why: Optional[str] = None
     how: Optional[str] = None
+    
+    # Tree/Root Model
+    project: Optional[str] = None  # The tree/project this belongs to
+    scope: KnowledgeScope = KnowledgeScope.BRANCH  # branch or root
     
     # Metadata
     tags: list[str] = field(default_factory=list)

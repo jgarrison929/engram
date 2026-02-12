@@ -36,6 +36,7 @@ from engram.core import (
     Edge,
     EdgeType,
     NodeType,
+    KnowledgeScope,
     SQLiteBackend,
 )
 from engram.query import MemoryTraverser
@@ -171,14 +172,18 @@ def cli(ctx, db):
 @click.option("--type", "node_type", type=click.Choice([t.value for t in NodeType]), default="event")
 @click.option("--artifact", "-a", multiple=True, help="Linked files/URLs (repeatable)")
 @click.option("--link-to", help="Node ID to link this to (creates LED_TO edge)")
+@click.option("--project", help="Project/tree this memory belongs to (e.g., vista, pnpv4)")
+@click.option("--scope", type=click.Choice(["branch", "root"]), default="branch",
+              help="Knowledge scope: branch (project-specific) or root (shared)")
 @click.pass_context
-def add(ctx, what, when, who, where, why, how, tags, node_type, artifact, link_to):
+def add(ctx, what, when, who, where, why, how, tags, node_type, artifact, link_to, project, scope):
     """Add a new memory.
     
     Examples:
         engram add "Created the pitbull logo"
         engram add "Deployed to production" --when "2 hours ago" --tags deploy,pitbull
         engram add "Josh approved the design" --who Josh --type decision
+        engram add "Vista can't do weekly costing" --project vista --scope root
     """
     storage = get_storage(ctx.obj.get("db"))
     
@@ -195,6 +200,8 @@ def add(ctx, what, when, who, where, why, how, tags, node_type, artifact, link_t
         who=list(who),
         why=why,
         how=how,
+        project=project,
+        scope=KnowledgeScope(scope),
         tags=tags_list,
         artifacts=list(artifact),
     )
@@ -217,6 +224,11 @@ def add(ctx, what, when, who, where, why, how, tags, node_type, artifact, link_t
     
     console.print(f"✓ Added memory: [bold]{node_id}[/bold]")
     console.print(f"  {what[:60]}{'...' if len(what) > 60 else ''}", style="dim")
+    if project or scope == "root":
+        scope_str = f"[cyan]{project or 'global'}[/cyan]" if project else ""
+        if scope == "root":
+            scope_str += " [yellow](root)[/yellow]"
+        console.print(f"  {scope_str}")
     
     storage.close()
 
@@ -229,23 +241,38 @@ def add(ctx, what, when, who, where, why, how, tags, node_type, artifact, link_t
 @click.option("--hops", "-h", default=0, help="Traverse N hops from matches (default: 0)")
 @click.option("--limit", "-n", default=20, help="Max results (default: 20)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--project", help="Filter to a specific project/tree")
+@click.option("--roots-only", is_flag=True, help="Only search root (shared) knowledge")
 @click.pass_context
-def query(ctx, query, since, until, tags, hops, limit, as_json):
+def query(ctx, query, since, until, tags, hops, limit, as_json, project, roots_only):
     """Query memories.
     
     Examples:
         engram query "logo"
         engram query --since yesterday
         engram query --tags pitbull,design --hops 2
+        engram query "costing" --project vista
+        engram query "gap" --roots-only
     """
     storage = get_storage(ctx.obj.get("db"))
     traverser = MemoryTraverser(storage)
     
     results = []
     
-    # Text search
+    # Text search with optional project/scope filtering
     if query:
-        results = storage.query_by_text(query, limit=limit)
+        if project or roots_only:
+            results = storage.query_by_text_filtered(query, project=project, roots_only=roots_only, limit=limit)
+        else:
+            results = storage.query_by_text(query, limit=limit)
+    
+    # Project filter (no text query)
+    elif project:
+        results = storage.query_by_project(project, include_roots=not roots_only, limit=limit)
+    
+    # Roots only (no text query)
+    elif roots_only:
+        results = storage.query_roots_only(limit=limit)
     
     # Tag filter
     elif tags:
@@ -291,6 +318,8 @@ def query(ctx, query, since, until, tags, hops, limit, as_json):
                 "where": node.where,
                 "why": node.why,
                 "tags": node.tags,
+                "project": node.project,
+                "scope": node.scope.value,
             })
         print(json.dumps(output, indent=2))
     else:
@@ -298,18 +327,21 @@ def query(ctx, query, since, until, tags, hops, limit, as_json):
             console.print("No memories found.", style="dim")
         else:
             table = Table(show_header=True, header_style="bold")
-            table.add_column("When", style="cyan", width=16)
+            table.add_column("When", style="cyan", width=12)
             table.add_column("What", style="white")
-            table.add_column("Tags", style="green", width=20)
-            table.add_column("ID", style="dim", width=10)
+            table.add_column("Project", style="blue", width=10)
+            table.add_column("Scope", style="yellow", width=6)
+            table.add_column("ID", style="dim", width=8)
             
             for node in results:
                 when_str = node.when.strftime("%m/%d %H:%M") if node.when else "?"
-                tags_str = ", ".join(node.tags[:3]) + ("..." if len(node.tags) > 3 else "")
+                project_str = node.project or ""
+                scope_str = "🌱" if node.scope.value == "root" else ""
                 table.add_row(
                     when_str,
-                    node.what[:50] + ("..." if len(node.what) > 50 else ""),
-                    tags_str,
+                    node.what[:45] + ("..." if len(node.what) > 45 else ""),
+                    project_str[:10],
+                    scope_str,
                     str(node.id)[:8],
                 )
             
@@ -367,6 +399,10 @@ def show(ctx, node_id):
         panel_content.append(f"[bold]Why:[/bold] {node.why}")
     if node.how:
         panel_content.append(f"[bold]How:[/bold] {node.how}")
+    if node.project:
+        panel_content.append(f"[bold]Project:[/bold] {node.project}")
+    scope_display = "🌱 root (shared)" if node.scope.value == "root" else "branch"
+    panel_content.append(f"[bold]Scope:[/bold] {scope_display}")
     if node.tags:
         panel_content.append(f"[bold]Tags:[/bold] {', '.join(node.tags)}")
     if node.artifacts:
@@ -653,6 +689,64 @@ def import_md(ctx, filepath, dry_run, tag):
         console.print(f"\n[yellow]Dry run:[/yellow] Would create {len(sections) - 1} nodes")
     else:
         console.print(f"\n[green]Imported:[/green] {len(nodes_created)} nodes from {filepath}")
+    
+    storage.close()
+
+
+@cli.command()
+@click.pass_context
+def trees(ctx):
+    """List all projects (trees) and their statistics.
+    
+    Shows:
+      - All project names
+      - Node counts per project
+      - Branch vs root breakdown
+    
+    Tree/Root Model:
+      - Trees = Projects/Systems (e.g., vista, pnpv4)
+      - Branches = Project-specific knowledge
+      - Roots = Shared knowledge that crosses projects
+    
+    Example:
+        engram trees
+    """
+    storage = get_storage(ctx.obj.get("db"))
+    
+    stats = storage.get_project_stats()
+    
+    if not stats['projects'] and stats['total_roots'] == 0:
+        console.print("[yellow]No projects or roots found yet.[/yellow]")
+        console.print("Use --project and --scope when adding memories:", style="dim")
+        console.print("  engram add \"fact\" --project vista --scope branch", style="dim")
+        console.print("  engram add \"insight\" --project vista --scope root", style="dim")
+        storage.close()
+        return
+    
+    console.print(Panel("[bold]🌳 Project Trees[/bold]", style="green"))
+    
+    if stats['projects']:
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Project", style="cyan")
+        table.add_column("Total", justify="right")
+        table.add_column("Branches", justify="right", style="green")
+        table.add_column("Roots 🌱", justify="right", style="yellow")
+        
+        for proj in stats['projects']:
+            table.add_row(
+                proj['name'],
+                str(proj['node_count']),
+                str(proj['branch_count']),
+                str(proj['root_count']),
+            )
+        
+        console.print(table)
+    else:
+        console.print("[dim]No named projects yet.[/dim]")
+    
+    console.print(f"\n[bold]Root Knowledge (shared):[/bold] {stats['total_roots']} nodes")
+    if stats['orphan_roots'] > 0:
+        console.print(f"  [dim]({stats['orphan_roots']} roots not assigned to any project)[/dim]")
     
     storage.close()
 

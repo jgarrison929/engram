@@ -5,6 +5,7 @@ from .models import (
     Edge,
     EdgeType,
     NodeType,
+    KnowledgeScope,
     QueryResult,
 )
 from .storage import StorageBackend, SQLiteBackend
@@ -14,6 +15,7 @@ __all__ = [
     "Edge",
     "EdgeType",
     "NodeType",
+    "KnowledgeScope",
     "QueryResult",
     "StorageBackend",
     "SQLiteBackend",

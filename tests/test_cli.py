@@ -638,3 +638,132 @@ class TestExport:
         assert result.exit_code == 0
         assert '"type": "artifact"' in result.output
         assert '"what": "JSON test"' in result.output
+
+
+class TestTreesAndRoots:
+    """Tests for tree/root model CLI functionality."""
+    
+    def test_add_with_project(self, runner, temp_db):
+        """Test adding a memory with project."""
+        result = runner.invoke(cli, [
+            "--db", temp_db, "add",
+            "Vista monthly costing",
+            "--project", "vista",
+        ])
+        assert result.exit_code == 0
+        assert "Added memory" in result.output
+    
+    def test_add_with_scope_root(self, runner, temp_db):
+        """Test adding a root-scoped memory."""
+        result = runner.invoke(cli, [
+            "--db", temp_db, "add",
+            "Costing gap insight",
+            "--project", "vista",
+            "--scope", "root",
+        ])
+        assert result.exit_code == 0
+        assert "root" in result.output.lower()
+    
+    def test_add_with_scope_branch(self, runner, temp_db):
+        """Test adding a branch-scoped memory."""
+        result = runner.invoke(cli, [
+            "--db", temp_db, "add",
+            "Branch decision",
+            "--project", "pnpv4",
+            "--scope", "branch",
+        ])
+        assert result.exit_code == 0
+    
+    def test_query_with_project_filter(self, runner, temp_db):
+        """Test querying with project filter."""
+        # Add memories to different projects
+        runner.invoke(cli, ["--db", temp_db, "add", "Vista thing", "--project", "vista"])
+        runner.invoke(cli, ["--db", temp_db, "add", "PnP thing", "--project", "pnpv4"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "query", "--project", "vista"])
+        assert result.exit_code == 0
+        assert "Vista thing" in result.output
+    
+    def test_query_roots_only(self, runner, temp_db):
+        """Test querying only root knowledge."""
+        runner.invoke(cli, ["--db", temp_db, "add", "Branch note", "--project", "vista", "--scope", "branch"])
+        runner.invoke(cli, ["--db", temp_db, "add", "Root insight", "--project", "vista", "--scope", "root"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "query", "--roots-only"])
+        assert result.exit_code == 0
+        assert "Root insight" in result.output
+        # Branch note might or might not appear depending on table display
+    
+    def test_query_text_with_project(self, runner, temp_db):
+        """Test text search within a project."""
+        runner.invoke(cli, ["--db", temp_db, "add", "Vista costing issue", "--project", "vista"])
+        runner.invoke(cli, ["--db", temp_db, "add", "PnP costing fix", "--project", "pnpv4"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "query", "costing", "--project", "vista"])
+        assert result.exit_code == 0
+        assert "Vista" in result.output
+    
+    def test_query_json_includes_project_scope(self, runner, temp_db):
+        """Test JSON output includes project and scope."""
+        runner.invoke(cli, [
+            "--db", temp_db, "add",
+            "Test memory",
+            "--project", "testproj",
+            "--scope", "root",
+        ])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "query", "Test", "--json"])
+        assert result.exit_code == 0
+        
+        output = json.loads(result.output)
+        assert len(output) == 1
+        assert output[0]["project"] == "testproj"
+        assert output[0]["scope"] == "root"
+    
+    def test_trees_command_empty(self, runner, temp_db):
+        """Test trees command on empty database."""
+        result = runner.invoke(cli, ["--db", temp_db, "trees"])
+        assert result.exit_code == 0
+        assert "No projects" in result.output or "engram add" in result.output
+    
+    def test_trees_command_with_data(self, runner, temp_db):
+        """Test trees command with project data."""
+        runner.invoke(cli, ["--db", temp_db, "add", "V1", "--project", "vista", "--scope", "branch"])
+        runner.invoke(cli, ["--db", temp_db, "add", "V2", "--project", "vista", "--scope", "root"])
+        runner.invoke(cli, ["--db", temp_db, "add", "P1", "--project", "pnpv4", "--scope", "branch"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "trees"])
+        assert result.exit_code == 0
+        assert "vista" in result.output
+        assert "pnpv4" in result.output
+        assert "Root" in result.output  # Root knowledge section
+    
+    def test_show_displays_project_scope(self, runner, temp_db):
+        """Test show command displays project and scope."""
+        result = runner.invoke(cli, [
+            "--db", temp_db, "add",
+            "Test node",
+            "--project", "myproj",
+            "--scope", "root",
+        ])
+        
+        # Extract the ID from the output
+        # Output format: "✓ Added memory: <uuid>"
+        import re
+        match = re.search(r'Added memory: ([a-f0-9-]+)', result.output)
+        assert match
+        node_id = match.group(1)[:8]  # Use first 8 chars
+        
+        result = runner.invoke(cli, ["--db", temp_db, "show", node_id])
+        assert result.exit_code == 0
+        assert "myproj" in result.output
+        assert "root" in result.output.lower()
+    
+    def test_stats_would_still_work(self, runner, temp_db):
+        """Ensure stats still works with tree/root model."""
+        runner.invoke(cli, ["--db", temp_db, "add", "Node1", "--project", "proj1"])
+        runner.invoke(cli, ["--db", temp_db, "add", "Node2", "--project", "proj2", "--scope", "root"])
+        
+        result = runner.invoke(cli, ["--db", temp_db, "stats"])
+        assert result.exit_code == 0
+        assert "Nodes by Type" in result.output
